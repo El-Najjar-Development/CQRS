@@ -1,4 +1,4 @@
-﻿using Elnajjar.CQRS.Contracts;
+using Elnajjar.CQRS.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 
@@ -15,7 +15,7 @@ namespace Elnajjar.CQRS
 
 		public Task Send(ICommand command, CancellationToken cancellationToken = default)
 		{
-			return SendRequest<ICommand, object>(command, cancellationToken);
+			return SendRequest(command, cancellationToken);
 		}
 
 		public Task<TResponse> Send<TResponse>(IQuery<TResponse> query, CancellationToken cancellationToken = default)
@@ -46,8 +46,6 @@ namespace Elnajjar.CQRS
 			Type handlerInterfaceType;
 			if (request is ICommand<TResponse>)
 				handlerInterfaceType = typeof(ICommandHandler<,>).MakeGenericType(requestType, typeof(TResponse));
-			else if (request is ICommand)
-				handlerInterfaceType = typeof(ICommandHandler<>).MakeGenericType(requestType);
 			else if (request is IQuery<TResponse>)
 				handlerInterfaceType = typeof(IQueryHandler<,>).MakeGenericType(requestType, typeof(TResponse));
 			else
@@ -65,6 +63,33 @@ namespace Elnajjar.CQRS
 			{
 				var method = handlerInterfaceType.GetMethod("Handle");
 				return (Task<TResponse>)method!.Invoke(handler, [ request, cancellationToken ])!;
+			};
+
+			var pipeline = decorators.Reverse()
+				.Aggregate(handlerDelegate,
+					(next, decorator) => () => decorator.Handle(request, next, cancellationToken));
+
+			return pipeline();
+		}
+
+		private Task SendRequest<TRequest>(TRequest request, CancellationToken cancellationToken)
+		{
+			var requestType = request!.GetType();
+
+			Type handlerInterfaceType = typeof(ICommandHandler<>).MakeGenericType(requestType);
+
+			var decorators = _serviceProvider
+				.GetServices<ICQRSDecorators<TRequest>>()
+				.ToArray();
+
+			var handler = _serviceProvider.GetService(handlerInterfaceType);
+			if (handler == null)
+				throw new InvalidOperationException($"No handler registered for {requestType.Name}");
+
+			RequestHandlerDelegate handlerDelegate = () =>
+			{
+				var method = handlerInterfaceType.GetMethod("Handle");
+				return (Task)method!.Invoke(handler, [request, cancellationToken])!;
 			};
 
 			var pipeline = decorators.Reverse()

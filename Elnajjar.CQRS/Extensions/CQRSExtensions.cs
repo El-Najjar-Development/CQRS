@@ -86,10 +86,11 @@ namespace Elnajjar.CQRS.Extensions
 
 			var decoratorInterface = interfaces.FirstOrDefault(i =>
 				i.IsGenericType &&
-				i.GetGenericTypeDefinition() == typeof(ICQRSDecorators<,>));
+				(i.GetGenericTypeDefinition() == typeof(ICQRSDecorators<,>) ||
+				i.GetGenericTypeDefinition() == typeof(ICQRSDecorators<>)));
 
 			if (decoratorInterface == null)
-				throw new ArgumentException($"Type {decoratorType.Name} does not implement ICQRSDecorators<,>");
+				throw new ArgumentException($"Type {decoratorType.Name} does not implement ICQRSDecorators<,> or ICQRSDecorators<>");
 
 			var typeArgs = decoratorInterface.GetGenericArguments();
 
@@ -101,6 +102,7 @@ namespace Elnajjar.CQRS.Extensions
 		public static IServiceCollection AddLoggingCQRSDecorator(this IServiceCollection services)
 		{
 			services.AddTransient(typeof(ICQRSDecorators<,>), typeof(LoggingCQRSDecorator<,>));
+			services.AddTransient(typeof(ICQRSDecorators<>), typeof(LoggingCQRSDecorator<>));
 			return services;
 		}
 	}

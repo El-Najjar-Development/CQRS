@@ -128,3 +128,6 @@ DocProject/Help/html
 # Local history folder
 .history/
 .ionide/
+
+
+Elnajjar.CQRS.Test.API/*

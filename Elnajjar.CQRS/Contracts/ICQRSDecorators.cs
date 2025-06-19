@@ -6,4 +6,11 @@
 	}
 
 	public delegate Task<TResponse> RequestHandlerDelegate<TResponse>();
+
+	public interface ICQRSDecorators<TRequest>
+	{
+		Task Handle(TRequest request, RequestHandlerDelegate next, CancellationToken cancellationToken);
+	}
+
+	public delegate Task RequestHandlerDelegate();
 }
