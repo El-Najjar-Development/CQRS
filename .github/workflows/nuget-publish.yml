@@ -1,0 +1,89 @@
+name: Build and Publish NuGet Package
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 0 # Needed for version calculation to work correctly
+        
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '9.0.x'
+        include-prerelease: true
+
+    # Automatically calculate version from git tag
+    - name: Set Version
+      id: version
+      run: |
+        if [[ $GITHUB_REF == refs/tags/v* ]]; then
+          # For tags, use the tag version directly
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Set version to $VERSION from tag"
+        else
+          # For non-tag builds, use a development version based on most recent tag + commit count
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          LATEST_TAG=${LATEST_TAG#v}
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          VERSION="$LATEST_TAG-dev.$COMMIT_COUNT+${GITHUB_SHA::8}"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Set version to $VERSION based on commit history"
+        fi
+        
+    - name: Restore dependencies
+      run: dotnet restore
+      
+    # Update version in all project files
+    - name: Update Project Version
+      run: |
+        find . -name "*.csproj" -type f -exec sed -i "s|<Version>.*</Version>|<Version>$VERSION</Version>|g" {} \;
+        echo "Updated all csproj files to version $VERSION"
+      
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+      
+    - name: Test
+      run: dotnet test --no-build --verbosity normal --configuration Release
+      
+    - name: Pack
+      run: dotnet pack --configuration Release --no-build --output ./nupkg
+      
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: nuget-packages
+        path: ./nupkg/*.nupkg
+        
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: nuget-packages
+        path: ./nupkg
+        
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '9.0.x'
+        include-prerelease: true
+        
+    - name: Publish to NuGet
+      run: |
+        for f in ./nupkg/*.nupkg
+        do
+          dotnet nuget push "$f" --api-key ${{secrets.NUGET_API_KEY}} --source https://api.nuget.org/v3/index.json --skip-duplicate
+        done
